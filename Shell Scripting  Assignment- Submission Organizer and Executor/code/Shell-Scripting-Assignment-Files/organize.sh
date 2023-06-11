@@ -42,15 +42,20 @@ then
     fi
 fi
 
-echo $verbose
-echo $noexecute
 
-submission_folder="$1"
+#Extract necessary folder location information from command line arguments
+submission_folder="$1""/"
 target_folder="$2"
 test_folder="$3"
 ans_folder="$4"
+current_direct=`pwd`
 
-echo $submission_folder
-echo $target_folder
-echo $test_folder
-echo $ans_folder
+
+cd "$submission_folder"
+
+for i in *
+do
+    echo $i
+    unzip "$i" -d "$current_direct""/temp/"
+done
+
