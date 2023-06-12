@@ -83,20 +83,26 @@ curr_roll=0
 current_direct=`pwd`
 
 mkdir -p "temp"         #create a temporary file to store unzipped files from submission for further organizing tasks
+#Create a .csv file if no execute = 0
+if [ $noexecute -eq 0 ]
+then
+    csv_file="$target_folder/result.csv"
+    echo "student_id,type,matched,not_matched" >> "$csv_file"
+fi
 
 for i in "$submission_folder"/*
 do  
-    curr_roll=`echo ${i%.zip}`      #At first,remove the extension from file name
-    curr_roll=${curr_roll: -7}      #Then extract last 7 digits(Roll no) from the string 
+    curr_roll=`echo ${i%.zip}`     #At first,remove the extension from file name
+    curr_roll=${curr_roll: -7}     #Then extract last 7 digits(Roll no) from the string 
+    unzip -q "$i" -d "temp/"       #unzip it in temporary folder
+    visit "temp"                   #call recursive function in that temp folder to find any c/java/py files
+    extension="${file_name##*.}"   #Extract the extension
 
+    #Show msg of organizing files if verbose is 1
     if [ $verbose -eq 1 ]
     then
         echo "Organizing files of $curr_roll"
     fi
-
-    unzip -q "$i" -d "temp/"       #unzip it in temporary folder
-    visit "temp"                   #call recursive function in that temp folder to find any c/java/py files
-    extension="${file_name##*.}"   #Extract the extension
 
     #check for the file's extension and start organizing and executing it
     if [ $extension = "c" ]
@@ -134,9 +140,7 @@ do
                     incorrect=`expr $incorrect + 1`
                 fi
             done
-
-            echo "$correct"
-            echo "$incorrect"
+            echo "$curr_roll,C,$correct,$incorrect" >> "$csv_file"                         #update The csv file
         fi
 
     elif [ $extension = "java" ]
