@@ -29,6 +29,16 @@ visit()
 }
 
 
+show_execution_msg()
+{
+    #Show execution message
+    if [ $noexecute -eq 0 ] && [ $verbose -eq 1 ]
+    then
+        echo "Executing files of $1"
+    fi
+}
+
+
 #At first Check the command line arguments and extract necessary info
 if [ "$#" -lt 4 ]
 then
@@ -85,13 +95,50 @@ do
     fi
 
     unzip -q "$i" -d "temp/"       #unzip it in temporary folder
-
     visit "temp"                   #call recursive function in that temp folder to find any c/java/py files
     extension="${file_name##*.}"   #Extract the extension
+
+    #check for the file's extension and start organizing and executing it
     if [ $extension = "c" ]
     then
-        mkdir -p "$target_folder/C/$curr_roll"
-        cp "$file_name" "$target_folder/C/$curr_roll/main.c" 
+        mkdir -p "$target_folder/C/$curr_roll"                                                  #Open a folder name C and a subdirectory with roll no                                              
+        cp "$file_name" "$target_folder/C/$curr_roll/main.c"                                    #copy that source file into specific destination
+
+        show_execution_msg "$curr_roll"                                                         #Show execution message
+        #execute only if noexecute is off
+        if [ $noexecute -eq 0 ]
+        then
+            g++ "$target_folder/C/$curr_roll/main.c" -o "$target_folder/C/$curr_roll/main.out"      #build that .c file
+            executable="$target_folder/C/$curr_roll/main.out"
+            chmod u+x "$executable"                                                                 #Give permission to execute-Important***
+
+            correct=0                                                                      #no of matched output files
+            incorrect=0                                                                    #no of unmatched output files
+            
+            #now execute the files
+            for input_file in "$test_folder"/*.txt
+            do  
+                #execute and  generate output like out1.txt,out2.txt,out3.txt
+                file_no=`echo ${input_file%.txt}`                                          #extract the name from input file..ex:test4.txt...extract test4 from it
+                file_no=${file_no: -1}                                                     #extract the number from input file..ex:"test4"...extract 4 from it
+                output_file="$target_folder/C/$curr_roll/out$file_no.txt"                  #Output File path "target/C/1905101/out4.txt"
+                "$executable" < "$input_file" > "$output_file"                             #run
+
+                #now match and generate CSV
+                ans_file="$ans_folder/ans$file_no.txt"
+                diff "$output_file" "$ans_file" > /dev/null                                #/dev/null will stop the terminal from showing differences of the two files
+                matched=$?                                                                 #diff will return exit status 0 if everything is same,and a nonzero integer if not 
+                if [ $matched -eq 0 ]; then
+                    correct=`expr $correct + 1`
+                else
+                    incorrect=`expr $incorrect + 1`
+                fi
+            done
+
+            echo "$correct"
+            echo "$incorrect"
+        fi
+
     elif [ $extension = "java" ]
     then
         mkdir -p "$target_folder/Java/$curr_roll"
