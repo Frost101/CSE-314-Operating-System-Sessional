@@ -75,12 +75,28 @@ fi
 
 
 #Extract necessary folder location information from command line arguments
-submission_folder="$1"
-target_folder="$2"
-test_folder="$3"
-ans_folder="$4"
-curr_roll=0
+#But at first,check if aubmission folder,test folder and answer folder path are correctly given or not
+if [ -d "$1" ] && [ -d "$3" ] && [ -d "$4" ]
+then
+    submission_folder="$1"
+    target_folder="$2"
+    test_folder="$3"
+    ans_folder="$4"
+else
+    echo "$warning_msg"
+    exit
+fi
+
+curr_roll=0                                #To extract Roll number from submission zip file and store
 current_direct=`pwd`
+
+
+#If any target folder exists from previous code,delete it
+if [ -d "$target_folder" ]
+then
+    rm -r "$target_folder"
+fi
+
 
 mkdir -p "temp"                 #create a temporary file to store unzipped files from submission for further organizing tasks
 mkdir -p "$target_folder"       #Create target directory for file organization
@@ -91,6 +107,21 @@ then
     echo "student_id,type,matched,not_matched" >> "$csv_file"
 fi
 
+
+#To show the message "Found n test files"
+test_file_count=0
+for i in "$test_folder"/*.txt
+do
+    test_file_count=`expr $test_file_count + 1`
+done
+if [ $verbose -eq 1 ]
+then
+    echo "Found $test_file_count test files"
+fi
+
+
+
+#Unzip,Organize,execute,match,generate CSV
 for i in "$submission_folder"/*
 do  
     curr_roll=`echo ${i%.zip}`     #At first,remove the extension from file name
@@ -155,6 +186,38 @@ do
 
         show_execution_msg "$curr_roll"                                                         #Show execution message
         #execute only if noexecute is off
+        if [ $noexecute -eq 0 ]
+        then
+            javac "$target_folder/Java/$curr_roll/Main.java"
+            executable="$target_folder/Java/$curr_roll/Main.java"
+            chmod u+x "$executable"  
+
+            correct=0
+            incorrect=0
+
+            #now execute the files
+            for input_file in "$test_folder"/*.txt
+            do
+                #execute and  generate output like out1.txt,out2.txt,out3.txt
+                file_no=`echo ${input_file%.txt}`                                          #extract the name from input file..ex:test4.txt...extract test4 from it
+                file_no=${file_no: -1}                                                     #extract the number from input file..ex:"test4"...extract 4 from it
+                output_file="$target_folder/Java/$curr_roll/out$file_no.txt"               #Output File path "target/Java/1905101/out4.txt"
+                java "$executable" < "$input_file" > "$output_file"                        #run
+
+
+                #now match and generate CSV
+                ans_file="$ans_folder/ans$file_no.txt"
+                diff "$output_file" "$ans_file" > /dev/null                                #/dev/null will stop the terminal from showing differences of the two files
+                matched=$?                                                                 #diff will return exit status 0 if everything is same,and a nonzero integer if not 
+                if [ $matched -eq 0 ]; then
+                    correct=`expr $correct + 1`
+                else
+                    incorrect=`expr $incorrect + 1`
+                fi
+            done
+            echo "$curr_roll,Java,$correct,$incorrect" >> "$csv_file"                       #update The csv file
+        fi
+        
         
 
     #Create a folder for Python and execute
@@ -163,7 +226,7 @@ do
         mkdir -p "$target_folder/Python/$curr_roll"
         cp "$file_name" "$target_folder/Python/$curr_roll/main.py"
 
-        show_execution_msg "$curr_roll"                                                         #Show execution message
+        show_execution_msg "$curr_roll"                                                     #Show execution message
         #execute only if noexecute is off
         if [ $noexecute -eq 0 ]
         then
