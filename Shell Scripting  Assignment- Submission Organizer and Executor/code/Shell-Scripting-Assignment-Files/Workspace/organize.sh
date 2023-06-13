@@ -82,7 +82,8 @@ ans_folder="$4"
 curr_roll=0
 current_direct=`pwd`
 
-mkdir -p "temp"         #create a temporary file to store unzipped files from submission for further organizing tasks
+mkdir -p "temp"                 #create a temporary file to store unzipped files from submission for further organizing tasks
+mkdir -p "$target_folder"       #Create target directory for file organization
 #Create a .csv file if no execute = 0
 if [ $noexecute -eq 0 ]
 then
@@ -105,6 +106,8 @@ do
     fi
 
     #check for the file's extension and start organizing and executing it
+
+    #Create a folder for "C"
     if [ $extension = "c" ]
     then
         mkdir -p "$target_folder/C/$curr_roll"                                                  #Open a folder name C and a subdirectory with roll no                                              
@@ -143,14 +146,52 @@ do
             echo "$curr_roll,C,$correct,$incorrect" >> "$csv_file"                         #update The csv file
         fi
 
+
+    #Create a folder for Java and execute
     elif [ $extension = "java" ]
     then
-        mkdir -p "$target_folder/Java/$curr_roll"
-        cp "$file_name" "$target_folder/Java/$curr_roll/Main.java" 
+        mkdir -p "$target_folder/Java/$curr_roll"                                               #Open a directory named Java and subdirectory 1905101
+        cp "$file_name" "$target_folder/Java/$curr_roll/Main.java"                              #Copy that .java file 
+
+        show_execution_msg "$curr_roll"                                                         #Show execution message
+        #execute only if noexecute is off
+        
+
+    #Create a folder for Python and execute
     elif [ $extension = "py" ]
     then
         mkdir -p "$target_folder/Python/$curr_roll"
-        cp "$file_name" "$target_folder/Python/$curr_roll/main.py" 
+        cp "$file_name" "$target_folder/Python/$curr_roll/main.py"
+
+        show_execution_msg "$curr_roll"                                                         #Show execution message
+        #execute only if noexecute is off
+        if [ $noexecute -eq 0 ]
+        then
+            correct=0                                                                      #no of matched output files
+            incorrect=0  
+
+            #now execute the files
+            for input_file in "$test_folder"/*.txt
+            do
+                #execute and  generate output like out1.txt,out2.txt,out3.txt
+                file_no=`echo ${input_file%.txt}`                                          #extract the name from input file..ex:test4.txt...extract test4 from it
+                file_no=${file_no: -1}                                                     #extract the number from input file..ex:"test4"...extract 4 from it
+                output_file="$target_folder/Python/$curr_roll/out$file_no.txt"                  #Output File path "target/Python/1905101/out4.txt"
+
+                python3 "$target_folder/Python/$curr_roll/main.py" < "$input_file" > "$output_file"      #run
+
+                #now match and generate CSV
+                ans_file="$ans_folder/ans$file_no.txt"
+                diff "$output_file" "$ans_file" > /dev/null                                #/dev/null will stop the terminal from showing differences of the two files
+                matched=$?                                                                 #diff will return exit status 0 if everything is same,and a nonzero integer if not 
+                if [ $matched -eq 0 ]; then
+                    correct=`expr $correct + 1`
+                else
+                    incorrect=`expr $incorrect + 1`
+                fi
+            done 
+            echo "$curr_roll,Python,$correct,$incorrect" >> "$csv_file"                         #update The csv file
+        fi
     fi
 
     rm -r "temp"/*              #Clear the temporary folder everytime after unzipping and organizing one's submission
