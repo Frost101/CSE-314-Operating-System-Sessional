@@ -34,21 +34,20 @@ index 0000000..a178795
 +}
 \ No newline at end of file
 diff --git a/Makefile b/Makefile
-index 39a99d7..0b34d21 100644
+index 39a99d7..b3663db 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -132,6 +132,9 @@ UPROGS=\
+@@ -132,6 +132,8 @@ UPROGS=\
  	$U/_grind\
  	$U/_wc\
  	$U/_zombie\
-+	$U/_myprog\
 +	$U/_trace\
 +	$U/_history\
  
  fs.img: mkfs/mkfs README $(UPROGS)
  	mkfs/mkfs fs.img README $(UPROGS)
 diff --git a/kernel/defs.h b/kernel/defs.h
-index a3c962b..1c29aa4 100644
+index a3c962b..37e1afe 100644
 --- a/kernel/defs.h
 +++ b/kernel/defs.h
 @@ -8,6 +8,8 @@ struct spinlock;
@@ -60,17 +59,15 @@ index a3c962b..1c29aa4 100644
  
  // bio.c
  void            binit(void);
-@@ -106,6 +108,9 @@ void            yield(void);
+@@ -106,6 +108,7 @@ void            yield(void);
  int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
  int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
  void            procdump(void);
-+void            setid(int);
-+int             getid();
 +int             trace(int);
  
  // swtch.S
  void            swtch(struct context*, struct context*);
-@@ -140,6 +145,8 @@ void            argaddr(int, uint64 *);
+@@ -140,6 +143,8 @@ void            argaddr(int, uint64 *);
  int             fetchstr(uint64, char*, int);
  int             fetchaddr(uint64, uint64*);
  void            syscall();
@@ -92,7 +89,7 @@ index f0d3171..68f83ad 100644
    } else {
      while(started == 0)
 diff --git a/kernel/proc.c b/kernel/proc.c
-index 959b778..a63fdcf 100644
+index 959b778..567ce21 100644
 --- a/kernel/proc.c
 +++ b/kernel/proc.c
 @@ -29,40 +29,39 @@ struct spinlock wait_lock;
@@ -765,22 +762,11 @@ index 959b778..a63fdcf 100644
        state = states[p->state];
      else
        state = "???";
-@@ -681,3 +700,30 @@ procdump(void)
+@@ -681,3 +700,19 @@ procdump(void)
      printf("\n");
    }
  }
 +
-+int uid = 100;
-+
-+void setid(int id)
-+{
-+  uid = id;
-+}
-+
-+int getid()
-+{
-+  return uid;
-+}
 +
 +// Modification for Offline-1:System call
 +int trace(int syscall_number)
@@ -823,107 +809,114 @@ index 19543af..c01dcef 100644
 +  int num;
 +};
 diff --git a/kernel/syscall.c b/kernel/syscall.c
-index ed65409..39d8d87 100644
+index ed65409..0f50b3f 100644
 --- a/kernel/syscall.c
 +++ b/kernel/syscall.c
-@@ -6,6 +6,19 @@
+@@ -6,6 +6,48 @@
  #include "proc.h"
  #include "syscall.h"
  #include "defs.h"
 +#include "syscall_stat.h"
 +
 +
++
 +//Modifications for Offline-1:System call
 +int traceID = -1;     //Which system call is needed to be traced
++
++struct intArgument
++{
++  int arg;
++  int index;
++};
++
++struct addrArgument
++{
++  uint64 arg;
++  int index;
++};
++
++struct strArgument
++{
++  char* arg;
++  int index;
++};
++
 +struct argumentTrace
 +{
-+    int intarg[7];
-+    uint64 addrarg[7];
-+    char* strarg[7];
++    struct addrArgument addr[10];
++    struct strArgument str[10];
++    struct intArgument intarg[10];
 +};
 +
 +struct argumentTrace argTrace;
++
++void initArgumentTrace(){
++  for(int i=0; i<10; i++){
++    argTrace.addr[i].index = -1;
++    argTrace.str[i].index = -1;
++    argTrace.intarg[i].index = -1;
++  }
++}
++
  
  // Fetch the uint64 at addr from the current process.
  int
-@@ -57,6 +70,8 @@ void
+@@ -57,6 +99,11 @@ void
  argint(int n, int *ip)
  {
    *ip = argraw(n);
-+  if(myproc()->sysID == traceID)
-+    argTrace.intarg[n] = *ip;   //Added for offline-1:Argument printing
++  //Added for offline-1:Argument printing
++  if(myproc()->sysID == traceID){
++    argTrace.intarg[n].arg = *ip;   
++    argTrace.intarg[n].index = n;
++  }
  }
  
  // Retrieve an argument as a pointer.
-@@ -66,6 +81,8 @@ void
+@@ -66,6 +113,11 @@ void
  argaddr(int n, uint64 *ip)
  {
    *ip = argraw(n);
-+  if(myproc()->sysID == traceID)
-+    argTrace.addrarg[n] = *ip;
++  //Added for offline-1:Argument printing
++  if(myproc()->sysID == traceID){
++    argTrace.addr[n].arg = *ip;
++    argTrace.addr[n].index = n;
++  }
  }
  
  // Fetch the nth word-sized system call argument as a null-terminated string.
-@@ -76,7 +93,11 @@ argstr(int n, char *buf, int max)
+@@ -76,7 +128,14 @@ argstr(int n, char *buf, int max)
  {
    uint64 addr;
    argaddr(n, &addr);
 -  return fetchstr(addr, buf, max);
 +  int status;
 +  status = fetchstr(addr, buf, max);
-+  if(myproc()->sysID == traceID)
-+    argTrace.strarg[n] = buf;
++  //Added for offline-1:Argument printing
++  if(myproc()->sysID == traceID){
++    argTrace.str[n].arg = buf;
++    argTrace.str[n].index = n;
++  }
 +  return status;
  }
  
  // Prototypes for the functions that handle system calls.
-@@ -101,6 +122,10 @@ extern uint64 sys_unlink(void);
+@@ -101,6 +160,8 @@ extern uint64 sys_unlink(void);
  extern uint64 sys_link(void);
  extern uint64 sys_mkdir(void);
  extern uint64 sys_close(void);
-+extern uint64 sys_getid(void);
-+extern uint64 sys_setid(void);
 +extern uint64 sys_trace(void);
 +extern uint64 sys_history(void);
  
  // An array mapping syscall numbers from syscall.h
  // to the function that handles the system call.
-@@ -126,19 +151,229 @@ static uint64 (*syscalls[])(void) = {
+@@ -126,19 +187,131 @@ static uint64 (*syscalls[])(void) = {
  [SYS_link]    sys_link,
  [SYS_mkdir]   sys_mkdir,
  [SYS_close]   sys_close,
-+[SYS_getid]   sys_getid,
-+[SYS_setid]   sys_setid,
 +[SYS_trace]   sys_trace,
 +[SYS_history] sys_history
 +};
-+
-+struct syscall_stat struct_fork;
-+struct syscall_stat struct_exit;
-+struct syscall_stat struct_wait;
-+struct syscall_stat struct_pipe;
-+struct syscall_stat struct_read;
-+struct syscall_stat struct_kill;
-+struct syscall_stat struct_exec;
-+struct syscall_stat struct_fstat;
-+struct syscall_stat struct_chdir;
-+struct syscall_stat struct_dup;
-+struct syscall_stat struct_getpid;
-+struct syscall_stat struct_sbrk;
-+struct syscall_stat struct_sleep;
-+struct syscall_stat struct_uptime;
-+struct syscall_stat struct_open;
-+struct syscall_stat struct_write;
-+struct syscall_stat struct_mknod;
-+struct syscall_stat struct_unlink;
-+struct syscall_stat struct_link;
-+struct syscall_stat struct_mkdir;
-+struct syscall_stat struct_close;
-+struct syscall_stat struct_getid;
-+struct syscall_stat struct_setid;
-+struct syscall_stat struct_trace;
-+struct syscall_stat struct_history;
-+
 +
 +
 +
@@ -952,8 +945,6 @@ index ed65409..39d8d87 100644
 +  "link",
 +  "mkdir",
 +  "close",
-+  "getid",
-+  "setid",
 +  "trace",
 +  "history"
  };
@@ -985,6 +976,7 @@ index ed65409..39d8d87 100644
 +      //Modification for Offline-1:System Call
 +      traceID = num;
 +      printf("pid: %d, syscall: %s, args: ", p->pid, syscall_names[p->sysID]);
++      initArgumentTrace();
 +    }
 +
 +    //Modification for Offline-1:System Call
@@ -1004,114 +996,46 @@ index ed65409..39d8d87 100644
 +    ticks0 = ticks - ticks0;
 +    release(&tickslock);
 +
++    if(p->sysID == num){
++      printf("(");
++      int found = 0;
++      int cnt = 0;
++      for(int i=0;i<10;i++){
++        if(argTrace.intarg[i].index != -1){
++          if(cnt!=0)printf(" ");
++          printf("%d,",argTrace.intarg[i].arg);
++          found = 1;
++        }
++        else if(argTrace.str[i].index != -1){
++          if(cnt!=0)printf(" ");
++          printf("%s,",argTrace.str[i].arg);
++          found = 1;
++        }
++        else if(argTrace.addr[i].index != -1){
++          if(cnt!=0)printf(" ");
++          printf("%p,",argTrace.addr[i].arg);
++          found = 1;
++        }
++        cnt++;
++      }
++      if(found){
++        printf("\b)");
++      }
++      else{
++        printf(")");
++      }
++      initArgumentTrace();
++    }
++
++    
++    acquire(&(p->lock));
 +    sys_structs[num].count++;
-+    strncpy(sys_structs[num].syscall_name, syscall_names[num], sizeof(sys_structs[num].syscall_name) - 1);
 +    sys_structs[num].accum_time += (int)ticks0;
++    release(&(p->lock));
 +
 +    //Modificattion for Offline-1:System Call
 +    if(p->sysID == num){
-+      //print arguments first
-+      if(num == 1){
-+        //int fork(void);
-+        printf("()");
-+      }
-+      else if(num == 2){
-+        //int exit(int) __attribute__((noreturn));
-+        printf("(%d)",argTrace.intarg[0]);
-+      }
-+      else if(num == 3){
-+        //int wait(int*);
-+        printf("(%p)",argTrace.addrarg[0]);
-+      }
-+      else if(num == 4){
-+        //int pipe(int*);
-+        printf("(%p)",argTrace.addrarg[0]);
-+      }
-+      else if(num == 5){
-+        //int read(int, void*, int);
-+        printf("(%d, %p, %d)",argTrace.intarg[0], argTrace.addrarg[1], argTrace.intarg[2]);
-+      }
-+      else if(num == 6){
-+        //int kill(int);
-+        printf("(%d)",argTrace.intarg[0]);
-+      }
-+      else if(num == 7){
-+        //int exec(const char*, char**);
-+        printf("(%s, %p)",argTrace.strarg[0],argTrace.addrarg[1]);
-+      }
-+      else if(num == 8){
-+        //int fstat(int fd, struct stat*);
-+        printf("(%d, %p)",argTrace.intarg[0],argTrace.addrarg[1]);
-+      }
-+      else if(num == 9){
-+        //int chdir(const char*);
-+        printf("(%s)",argTrace.strarg[0]);
-+      }
-+      else if(num == 10){
-+        //int dup(int);
-+        printf("(%d)",argTrace.intarg[0]);
-+      }
-+      else if(num == 11){
-+        //int getpid(void);
-+        printf("()");
-+      }
-+      else if(num == 12){
-+        //char* sbrk(int);
-+        printf("(%d)",argTrace.intarg[0]);
-+      }
-+      else if(num == 13){
-+        //int sleep(int);
-+        printf("(%d)",argTrace.intarg[0]);
-+      }
-+      else if(num == 14){
-+        //int uptime(void);
-+        printf("()");
-+      }
-+      else if(num == 15){
-+        //int open(const char*, int);
-+        printf("(%s, %d)",argTrace.strarg[0], argTrace.intarg[1]);
-+      }
-+      else if(num == 16){
-+        //int write(int, const void*, int);
-+        printf("(%d, %p, %d)",argTrace.intarg[0],argTrace.addrarg[1],argTrace.intarg[2]);
-+      }
-+      else if(num == 17){
-+        //int mknod(const char*, short, short);
-+        printf("(%s, %d, %d)",argTrace.strarg[0],argTrace.intarg[1],argTrace.intarg[2]);
-+      }
-+      else if(num == 18){
-+        //int unlink(const char*);
-+        printf("(%s)",argTrace.strarg[0]);
-+      }
-+      else if(num == 19){
-+        //int link(const char*, const char*);
-+        printf("(%s, %s)",argTrace.strarg[0],argTrace.strarg[1]);
-+      }
-+      else if(num == 20){
-+        //int mkdir(const char*);
-+        printf("(%s)",argTrace.strarg[0]);
-+      }
-+      else if(num == 21){
-+        //int close(int);
-+        printf("(%d)",argTrace.intarg[0]);
-+      }
-+      else if(num == 22){
-+        //int getid(void);
-+        printf("()");
-+      }
-+      else if(num == 23){
-+        //int setid(int);
-+        printf("(%d)",argTrace.intarg[0]);
-+      }
-+      else if(num == 24){
-+        //int trace(int);
-+        printf("(%d)",argTrace.intarg[0]);
-+      }
-+      else if(num == 25){
-+        //int history(int sysID, struct syscall_stat*);
-+        printf("(%d, %p)",argTrace.intarg[0],argTrace.addrarg[1]);
-+      }
-+
++      
 +      printf(", return: %d\n", p->trapframe->a0);
 +    }
 +
@@ -1119,17 +1043,15 @@ index ed65409..39d8d87 100644
      printf("%d %s: unknown sys call %d\n",
              p->pid, p->name, num);
 diff --git a/kernel/syscall.h b/kernel/syscall.h
-index bc5f356..658fbf2 100644
+index bc5f356..feb9a19 100644
 --- a/kernel/syscall.h
 +++ b/kernel/syscall.h
-@@ -20,3 +20,7 @@
+@@ -20,3 +20,5 @@
  #define SYS_link   19
  #define SYS_mkdir  20
  #define SYS_close  21
-+#define SYS_getid  22
-+#define SYS_setid  23
-+#define SYS_trace  24
-+#define SYS_history 25
++#define SYS_trace  22
++#define SYS_history 23
 diff --git a/kernel/syscall_stat.h b/kernel/syscall_stat.h
 new file mode 100644
 index 0000000..f9c8d02
@@ -1642,30 +1564,14 @@ index 16b668c..27604c4 100644
 +  return 0;
 +}
 diff --git a/kernel/sysproc.c b/kernel/sysproc.c
-index 1de184e..4b558c7 100644
+index 1de184e..b50ade1 100644
 --- a/kernel/sysproc.c
 +++ b/kernel/sysproc.c
-@@ -89,3 +89,28 @@ sys_uptime(void)
+@@ -89,3 +89,12 @@ sys_uptime(void)
    release(&tickslock);
    return xticks;
  }
 +
-+
-+
-+uint64
-+sys_getid(void)
-+{
-+  return getid();
-+}
-+
-+uint64
-+sys_setid(void)
-+{
-+  int id;
-+  argint(0,&id);
-+  setid(id);
-+  return 1;
-+}
 +
 +uint64
 +sys_trace(void)
@@ -1787,7 +1693,7 @@ index 0000000..2d95c8c
 +}
 \ No newline at end of file
 diff --git a/user/user.h b/user/user.h
-index 4d398d5..8e90f91 100644
+index 4d398d5..9c10475 100644
 --- a/user/user.h
 +++ b/user/user.h
 @@ -1,4 +1,5 @@
@@ -1796,26 +1702,22 @@ index 4d398d5..8e90f91 100644
  
  // system calls
  int fork(void);
-@@ -22,6 +23,10 @@ int getpid(void);
+@@ -22,6 +23,8 @@ int getpid(void);
  char* sbrk(int);
  int sleep(int);
  int uptime(void);
-+int getid(void);
-+int setid(int);
 +int trace(int);
 +int history(int sysID, struct syscall_stat*);
  
  // ulib.c
  int stat(const char*, struct stat*);
 diff --git a/user/usys.pl b/user/usys.pl
-index 01e426e..f8a97bb 100755
+index 01e426e..e2095e4 100755
 --- a/user/usys.pl
 +++ b/user/usys.pl
-@@ -36,3 +36,7 @@ entry("getpid");
+@@ -36,3 +36,5 @@ entry("getpid");
  entry("sbrk");
  entry("sleep");
  entry("uptime");
-+entry("getid");
-+entry("setid");
 +entry("trace");
 +entry("history");
