@@ -48,7 +48,7 @@ index 39a99d7..3b626b6 100644
  fs.img: mkfs/mkfs README $(UPROGS)
  	mkfs/mkfs fs.img README $(UPROGS)
 diff --git a/kernel/defs.h b/kernel/defs.h
-index a3c962b..c9d593c 100644
+index a3c962b..ca6c2eb 100644
 --- a/kernel/defs.h
 +++ b/kernel/defs.h
 @@ -8,6 +8,11 @@ struct spinlock;
@@ -71,17 +71,18 @@ index a3c962b..c9d593c 100644
  
  // swtch.S
  void            swtch(struct context*, struct context*);
-@@ -140,6 +146,8 @@ void            argaddr(int, uint64 *);
+@@ -140,6 +146,9 @@ void            argaddr(int, uint64 *);
  int             fetchstr(uint64, char*, int);
  int             fetchaddr(uint64, uint64*);
  void            syscall();
 +void            init_sysstat(void);
++void            init_my_global_lock(void);
 +
  
  // trap.c
  extern uint     ticks;
 diff --git a/kernel/kernelvec.S b/kernel/kernelvec.S
-index fb31b32..ab967f2 100644
+index fb31b32..9f738a3 100644
 --- a/kernel/kernelvec.S
 +++ b/kernel/kernelvec.S
 @@ -97,12 +97,19 @@ timervec:
@@ -105,7 +106,7 @@ index fb31b32..ab967f2 100644
          # schedule the next timer interrupt
          # by adding interval to mtimecmp.
          ld a1, 24(a0) # CLINT_MTIMECMP(hart)
-@@ -122,3 +129,17 @@ timervec:
+@@ -122,3 +129,16 @@ timervec:
          csrrw a0, mscratch, a0
  
          mret
@@ -120,18 +121,18 @@ index fb31b32..ab967f2 100644
 +        addi a2, a2, 0x555
 +        sw a2, 0(a1)
 +
-+spin:   
++spin:
 +        j spin
-+
 diff --git a/kernel/main.c b/kernel/main.c
-index f0d3171..15d44df 100644
+index f0d3171..f7f555b 100644
 --- a/kernel/main.c
 +++ b/kernel/main.c
-@@ -30,6 +30,7 @@ main()
+@@ -30,6 +30,8 @@ main()
      virtio_disk_init(); // emulated hard disk
      userinit();      // first user process
      __sync_synchronize();
 +    init_sysstat();  //Added for Offline 2: System Call..for user statistics
++    init_my_global_lock();  //Added for Offline-2:System Call
      started = 1;
    } else {
      while(started == 0)
@@ -855,7 +856,7 @@ index d021857..b960233 100644
 +  uint64 sysID;               //To know which system call needs to be traced
  };
 diff --git a/kernel/start.c b/kernel/start.c
-index e16f18a..8f5c2f0 100644
+index e16f18a..dfe81e8 100644
 --- a/kernel/start.c
 +++ b/kernel/start.c
 @@ -11,7 +11,9 @@ void timerinit();
@@ -885,7 +886,7 @@ index e16f18a..8f5c2f0 100644
 +
 +//Offline-2:System Call
 +//signaling halt to timervec
-+void 
++void
 +timerhalt()
 +{
 +  //setting halt flag in scratch area for hartid[0] to 1
@@ -905,10 +906,10 @@ index 19543af..c01dcef 100644
 +  int num;
 +};
 diff --git a/kernel/syscall.c b/kernel/syscall.c
-index ed65409..70358ab 100644
+index ed65409..1de0392 100644
 --- a/kernel/syscall.c
 +++ b/kernel/syscall.c
-@@ -6,6 +6,48 @@
+@@ -6,6 +6,56 @@
  #include "proc.h"
  #include "syscall.h"
  #include "defs.h"
@@ -918,6 +919,14 @@ index ed65409..70358ab 100644
 +
 +//Modifications for Offline-2:System call
 +int traceID = -1;     //Which system call is needed to be traced
++
++
++//Modification for Offline-2:System Call
++struct spinlock my_global_lock;
++
++void init_my_global_lock(){
++  initlock(&my_global_lock,"my_global_lock");
++}
 +
 +struct intArgument
 +{
@@ -957,19 +966,19 @@ index ed65409..70358ab 100644
  
  // Fetch the uint64 at addr from the current process.
  int
-@@ -57,6 +99,11 @@ void
+@@ -57,6 +107,11 @@ void
  argint(int n, int *ip)
  {
    *ip = argraw(n);
 +  //Added for offline-2:Argument printing
 +  if(myproc()->sysID == myproc()->trapframe->a7){
-+    argTrace.intarg[n].arg = *ip;   
++    argTrace.intarg[n].arg = *ip;
 +    argTrace.intarg[n].index = n;
 +  }
  }
  
  // Retrieve an argument as a pointer.
-@@ -66,6 +113,11 @@ void
+@@ -66,6 +121,11 @@ void
  argaddr(int n, uint64 *ip)
  {
    *ip = argraw(n);
@@ -981,7 +990,7 @@ index ed65409..70358ab 100644
  }
  
  // Fetch the nth word-sized system call argument as a null-terminated string.
-@@ -76,7 +128,14 @@ argstr(int n, char *buf, int max)
+@@ -76,7 +136,14 @@ argstr(int n, char *buf, int max)
  {
    uint64 addr;
    argaddr(n, &addr);
@@ -997,7 +1006,7 @@ index ed65409..70358ab 100644
  }
  
  // Prototypes for the functions that handle system calls.
-@@ -101,6 +160,9 @@ extern uint64 sys_unlink(void);
+@@ -101,6 +168,9 @@ extern uint64 sys_unlink(void);
  extern uint64 sys_link(void);
  extern uint64 sys_mkdir(void);
  extern uint64 sys_close(void);
@@ -1007,7 +1016,7 @@ index ed65409..70358ab 100644
  
  // An array mapping syscall numbers from syscall.h
  // to the function that handles the system call.
-@@ -126,19 +188,133 @@ static uint64 (*syscalls[])(void) = {
+@@ -126,19 +196,133 @@ static uint64 (*syscalls[])(void) = {
  [SYS_link]    sys_link,
  [SYS_mkdir]   sys_mkdir,
  [SYS_close]   sys_close,
@@ -1126,15 +1135,15 @@ index ed65409..70358ab 100644
 +      initArgumentTrace();
 +    }
 +
-+    
-+    acquire(&(p->lock));
++
++    acquire(&my_global_lock);
 +    sys_structs[num].count++;
 +    sys_structs[num].accum_time += (int)ticks0;
-+    release(&(p->lock));
++    release(&my_global_lock);
 +
 +    //Modificattion for Offline-2:System Call
 +    if(p->sysID == num){
-+      
++
 +      printf(", return: %d\n", p->trapframe->a0);
 +    }
 +
