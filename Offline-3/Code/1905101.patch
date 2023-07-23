@@ -1,5 +1,5 @@
 diff --git a/Makefile b/Makefile
-index 39a99d7..d5bcc04 100644
+index 39a99d7..6978d95 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -132,6 +132,8 @@ UPROGS=\
@@ -11,6 +11,15 @@ index 39a99d7..d5bcc04 100644
  
  fs.img: mkfs/mkfs README $(UPROGS)
  	mkfs/mkfs fs.img README $(UPROGS)
+@@ -153,7 +155,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
+ 	then echo "-gdb tcp::$(GDBPORT)"; \
+ 	else echo "-s -p $(GDBPORT)"; fi)
+ ifndef CPUS
+-CPUS := 3
++CPUS := 1
+ endif
+ 
+ QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic
 diff --git a/kernel/defs.h b/kernel/defs.h
 index a3c962b..80ffb57 100644
 --- a/kernel/defs.h
@@ -49,7 +58,7 @@ index 6624bff..2bb5cda 100644
 +#define BOOST_INERVAL 64
 +#define DEFAULT_TICKET_COUNT 10
 diff --git a/kernel/proc.c b/kernel/proc.c
-index 959b778..6c7f31e 100644
+index 959b778..e67c53e 100644
 --- a/kernel/proc.c
 +++ b/kernel/proc.c
 @@ -5,6 +5,8 @@
@@ -93,7 +102,7 @@ index 959b778..6c7f31e 100644
    return pid;
  }
  
-@@ -434,6 +454,77 @@ wait(uint64 addr)
+@@ -434,6 +454,78 @@ wait(uint64 addr)
    }
  }
  
@@ -135,6 +144,7 @@ index 959b778..6c7f31e 100644
 +  for(p = proc; p < &proc[NPROC]; p++){
 +    acquire(&p->lock);
 +    if(p->queue == 1){
++      //if(p->pid != 0)printf("reinitializing   %d    %d\n",p->pid,p->current_ticket_count);
 +      p->current_ticket_count = p->original_ticket_count;
 +    }
 +    release(&p->lock);
@@ -171,7 +181,7 @@ index 959b778..6c7f31e 100644
  // Per-CPU process scheduler.
  // Each CPU calls scheduler() after setting itself up.
  // Scheduler never returns.  It loops, doing:
-@@ -446,29 +537,141 @@ scheduler(void)
+@@ -446,29 +538,141 @@ scheduler(void)
  {
    struct proc *p;
    struct cpu *c = mycpu();
@@ -323,7 +333,7 @@ index 959b778..6c7f31e 100644
  }
  
  // Switch to scheduler.  Must hold only p->lock
-@@ -504,6 +707,11 @@ yield(void)
+@@ -504,6 +708,11 @@ yield(void)
  {
    struct proc *p = myproc();
    acquire(&p->lock);
@@ -335,7 +345,7 @@ index 959b778..6c7f31e 100644
    p->state = RUNNABLE;
    sched();
    release(&p->lock);
-@@ -681,3 +889,35 @@ procdump(void)
+@@ -681,3 +890,35 @@ procdump(void)
      printf("\n");
    }
  }
