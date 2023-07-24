@@ -58,7 +58,7 @@ index 6624bff..2bb5cda 100644
 +#define BOOST_INERVAL 64
 +#define DEFAULT_TICKET_COUNT 10
 diff --git a/kernel/proc.c b/kernel/proc.c
-index 959b778..e67c53e 100644
+index 959b778..e55a88c 100644
 --- a/kernel/proc.c
 +++ b/kernel/proc.c
 @@ -5,6 +5,8 @@
@@ -143,7 +143,7 @@ index 959b778..e67c53e 100644
 +  struct proc *p;
 +  for(p = proc; p < &proc[NPROC]; p++){
 +    acquire(&p->lock);
-+    if(p->queue == 1){
++    if(p->queue == 1 && p->state == RUNNABLE){
 +      //if(p->pid != 0)printf("reinitializing   %d    %d\n",p->pid,p->current_ticket_count);
 +      p->current_ticket_count = p->original_ticket_count;
 +    }
@@ -181,7 +181,7 @@ index 959b778..e67c53e 100644
  // Per-CPU process scheduler.
  // Each CPU calls scheduler() after setting itself up.
  // Scheduler never returns.  It loops, doing:
-@@ -446,29 +538,141 @@ scheduler(void)
+@@ -446,29 +538,137 @@ scheduler(void)
  {
    struct proc *p;
    struct cpu *c = mycpu();
@@ -214,23 +214,21 @@ index 959b778..e67c53e 100644
 +          sum += p->current_ticket_count;
 +          if(sum >= random && p->current_ticket_count > 0 && flag == 0){
 +            flag = 1;    //This lottery scheduling is occupied by this process
-+            p->current_ticket_count -= TIME_LIMIT_1;
++            p->current_ticket_count -= 1;   //Reduce ticket count by 1
++            //printf("LS--pid: %d   queue: %d    cur tkt: %d\n",p->pid,p->queue,p->current_ticket_count);
 +            p->consumed_time_slots_cur = 0; //Reset this variable to keep track how much time it has consumed while running
++            p->state = RUNNING;
++            c->proc = p;    
++            swtch(&c->context, &p->context);
 +
-+            //Keep the process running until it uses the full time limit of queue 1
-+            //yield will be called in every timer interrupt
-+            while(p->state == RUNNABLE && p->consumed_time_slots_cur < TIME_LIMIT_1){
-+              p->state = RUNNING;
-+              c->proc = p;    
-+              swtch(&c->context, &p->context);
-+
-+              // Process is done running for now.
-+              // It should have changed its p->state before coming back.
-+              c->proc = 0;
-+            }
++            // Process is done running for now.
++            // It should have changed its p->state before coming back.
++            c->proc = 0;
++            
 +            //Now check condition 3
 +            //If it consumes all the time slices and still RUNNABLE,it is preempted and inserted at the end of the next lower level queue
 +            if(p->state == RUNNABLE && p->consumed_time_slots_cur >= TIME_LIMIT_1){
++              //printf("preempted pid: %d\n",p->pid);
 +              p->queue = 2; //preempted
 +            }
 +            p->consumed_time_slots_cur = 0; //Reset
@@ -245,7 +243,8 @@ index 959b778..e67c53e 100644
 +        continue;
 +      }
 +      if(flag == 0 && !isQueue1Empty()){
-+        reInitialize();
++        if(getActiveTickets() == 0)
++          reInitialize();
 +        continue;
 +      }
 +      /*    Lottery-Scheduling Ends    */
@@ -262,30 +261,21 @@ index 959b778..e67c53e 100644
          // Switch to chosen process.  It is the process's job
          // to release its lock and then reacquire it
          // before jumping back to us.
--        p->state = RUNNING;
--        c->proc = p;
--        swtch(&c->context, &p->context);
- 
--        // Process is done running for now.
--        // It should have changed its p->state before coming back.
--        c->proc = 0;
-+        p->consumed_time_slots_cur = 0;   //Reset
 +
-+        //Keep the process running until it uses the full time limit of queue 1
-+        //yield will be called in every timer interrupt
-+        while(p->state == RUNNABLE && p->consumed_time_slots_cur < TIME_LIMIT_2){
-+          p->state = RUNNING;
-+          c->proc = p;
-+          swtch(&c->context, &p->context);
-+
-+          // Process is done running for now.
-+          // It should have changed its p->state before coming back.
-+          c->proc = 0;
-+        }
++        p->consumed_time_slots_cur = 0;   //Reset        
+         p->state = RUNNING;
+         c->proc = p;
+         swtch(&c->context, &p->context);
+-
+         // Process is done running for now.
+         // It should have changed its p->state before coming back.
+         c->proc = 0;
++        
 +
 +        if(p->state != RUNNABLE && p->consumed_time_slots_cur < TIME_LIMIT_2){
 +          //Voluntarily relinquishes control of the CPU
 +          //It's not RUNNABLE,maybe it's SLEEPING 
++          //printf("promoted pid: %d\n",p->pid);
 +          p->queue = 1;   //Upgrade
 +        }
 +        p->consumed_time_slots_cur = 0;   //reset;
@@ -296,6 +286,7 @@ index 959b778..e67c53e 100644
 +      //Now check if queue 1 is nonempty or not
 +      if(!isQueue1Empty())break;   //queue-1 is non empty..so go to lottery-scheduling
      }
++    /*     Round-Robin Ends     */
 +
 +
    }
@@ -333,19 +324,26 @@ index 959b778..e67c53e 100644
  }
  
  // Switch to scheduler.  Must hold only p->lock
-@@ -504,6 +708,11 @@ yield(void)
+@@ -504,6 +704,18 @@ yield(void)
  {
    struct proc *p = myproc();
    acquire(&p->lock);
-+  // if(p->state == RUNNING && p->queue == 2 && p->consumed_time_slots_cur < TIME_LIMIT_2){
-+  //   release(&p->lock);
-+  //   return;
-+  // }
++
++  //Offline-3:Scheduling
++  if(p->state == RUNNING && p->queue == 1 && p->consumed_time_slots_cur < TIME_LIMIT_1){
++    release(&p->lock);    //Don't forget to release
++    return;
++  }
++
++  if(p->state == RUNNING && p->queue == 2 && p->consumed_time_slots_cur < TIME_LIMIT_2){
++    release(&p->lock);    //Don't forget to release
++    return;
++  }
 +
    p->state = RUNNABLE;
    sched();
    release(&p->lock);
-@@ -681,3 +890,35 @@ procdump(void)
+@@ -681,3 +893,35 @@ procdump(void)
      printf("\n");
    }
  }
@@ -625,19 +623,22 @@ index 1de184e..935a6f2 100644
 +
 +
 diff --git a/kernel/trap.c b/kernel/trap.c
-index 512c850..021c88e 100644
+index 512c850..a0a7930 100644
 --- a/kernel/trap.c
 +++ b/kernel/trap.c
-@@ -167,6 +167,17 @@ clockintr()
+@@ -166,7 +166,20 @@ clockintr()
+   acquire(&tickslock);
    ticks++;
    wakeup(&ticks);
-   release(&tickslock);
++  
 +
 +  //Offline-3:Scheduling
 +  //Check for Boost interval
 +  if(ticks % BOOST_INERVAL == 0){
 +    priorityBoosting();
 +  }
++
+   release(&tickslock);
 +
 +
 +  //Update time consumed by a process
