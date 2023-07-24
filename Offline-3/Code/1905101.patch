@@ -58,7 +58,7 @@ index 6624bff..2bb5cda 100644
 +#define BOOST_INERVAL 64
 +#define DEFAULT_TICKET_COUNT 10
 diff --git a/kernel/proc.c b/kernel/proc.c
-index 959b778..e55a88c 100644
+index 959b778..cbd6a87 100644
 --- a/kernel/proc.c
 +++ b/kernel/proc.c
 @@ -5,6 +5,8 @@
@@ -75,7 +75,7 @@ index 959b778..e55a88c 100644
    p->pid = allocpid();
    p->state = USED;
 +  //Offline-3:Scheduling
-+  p->queue = 1;   
++  p->queue = 1;
 +  p->original_ticket_count = DEFAULT_TICKET_COUNT;
 +  p->current_ticket_count = DEFAULT_TICKET_COUNT;
 +  p->consumed_time_slots_cur = 0;
@@ -218,13 +218,13 @@ index 959b778..e55a88c 100644
 +            //printf("LS--pid: %d   queue: %d    cur tkt: %d\n",p->pid,p->queue,p->current_ticket_count);
 +            p->consumed_time_slots_cur = 0; //Reset this variable to keep track how much time it has consumed while running
 +            p->state = RUNNING;
-+            c->proc = p;    
++            c->proc = p;
 +            swtch(&c->context, &p->context);
 +
 +            // Process is done running for now.
 +            // It should have changed its p->state before coming back.
 +            c->proc = 0;
-+            
++
 +            //Now check condition 3
 +            //If it consumes all the time slices and still RUNNABLE,it is preempted and inserted at the end of the next lower level queue
 +            if(p->state == RUNNABLE && p->consumed_time_slots_cur >= TIME_LIMIT_1){
@@ -251,7 +251,7 @@ index 959b778..e55a88c 100644
 +    }
 +
 +
-+  
++
 +
 +    /*    Round-Robin starts       */
      for(p = proc; p < &proc[NPROC]; p++) {
@@ -262,7 +262,7 @@ index 959b778..e55a88c 100644
          // to release its lock and then reacquire it
          // before jumping back to us.
 +
-+        p->consumed_time_slots_cur = 0;   //Reset        
++        p->consumed_time_slots_cur = 0;   //Reset
          p->state = RUNNING;
          c->proc = p;
          swtch(&c->context, &p->context);
@@ -270,11 +270,11 @@ index 959b778..e55a88c 100644
          // Process is done running for now.
          // It should have changed its p->state before coming back.
          c->proc = 0;
-+        
++
 +
 +        if(p->state != RUNNABLE && p->consumed_time_slots_cur < TIME_LIMIT_2){
 +          //Voluntarily relinquishes control of the CPU
-+          //It's not RUNNABLE,maybe it's SLEEPING 
++          //It's not RUNNABLE,maybe it's SLEEPING
 +          //printf("promoted pid: %d\n",p->pid);
 +          p->queue = 1;   //Upgrade
 +        }
@@ -298,7 +298,7 @@ index 959b778..e55a88c 100644
 +
 +  // struct proc *p;
 +  // struct cpu *c = mycpu();
-+  
++
 +  // c->proc = 0;
 +  // for(;;){
 +  //   // Avoid deadlock by ensuring that devices can interrupt.
@@ -366,7 +366,7 @@ index 959b778..e55a88c 100644
 +
 +    acquire(&p->lock);
 +    stat.pid[cnt] = p->pid;
-+    stat.inuse[cnt] = (p->state != UNUSED);
++    stat.inuse[cnt] = (p->state == RUNNING || p->state == RUNNABLE);
 +    stat.inQ[cnt] = p->queue;
 +    stat.tickets_original[cnt] = p->original_ticket_count;
 +    stat.tickets_current[cnt] = p->current_ticket_count;
@@ -419,19 +419,19 @@ index 0000000..e99460c
 \ No newline at end of file
 diff --git a/kernel/rand.c b/kernel/rand.c
 new file mode 100644
-index 0000000..dce5c13
+index 0000000..f6073e8
 --- /dev/null
 +++ b/kernel/rand.c
 @@ -0,0 +1,121 @@
-+/* 
++/*
 +   A C-program for MT19937, with initialization improved 2002/1/26.
 +   Coded by Takuji Nishimura and Makoto Matsumoto.
 +
-+   Before using, initialize the state by using init_genrand(seed)  
++   Before using, initialize the state by using init_genrand(seed)
 +   or init_by_array(init_key, key_length).
 +
 +   Copyright (C) 1997 - 2002, Makoto Matsumoto and Takuji Nishimura,
-+   All rights reserved.                          
++   All rights reserved.
 +
 +   Redistribution and use in source and binary forms, with or without
 +   modification, are permitted provided that the following conditions
@@ -444,8 +444,8 @@ index 0000000..dce5c13
 +        notice, this list of conditions and the following disclaimer in the
 +        documentation and/or other materials provided with the distribution.
 +
-+     3. The names of its contributors may not be used to endorse or promote 
-+        products derived from this software without specific prior written 
++     3. The names of its contributors may not be used to endorse or promote
++        products derived from this software without specific prior written
 +        permission.
 +
 +   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
@@ -468,7 +468,7 @@ index 0000000..dce5c13
 +
 +//#include <stdio.h>
 +
-+/* Period parameters */  
++/* Period parameters */
 +#define N 624
 +#define M 397
 +#define MATRIX_A 0x9908b0dfUL   /* constant vector a */
@@ -483,8 +483,8 @@ index 0000000..dce5c13
 +{
 +    mt[0]= s & 0xffffffffUL;
 +    for (mti=1; mti<N; mti++) {
-+        mt[mti] = 
-+	    (1812433253UL * (mt[mti-1] ^ (mt[mti-1] >> 30)) + mti); 
++        mt[mti] =
++	    (1812433253UL * (mt[mti-1] ^ (mt[mti-1] >> 30)) + mti);
 +        /* See Knuth TAOCP Vol2. 3rd Ed. P.106 for multiplier. */
 +        /* In the previous versions, MSBs of the seed affect   */
 +        /* only MSBs of the array mt[].                        */
@@ -520,7 +520,7 @@ index 0000000..dce5c13
 +
 +        mti = 0;
 +    }
-+  
++
 +    y = mt[mti++];
 +
 +    /* Tempering */
@@ -578,7 +578,7 @@ index bc5f356..7926b7f 100644
 +#define SYS_settickets 22
 +#define SYS_getpinfo 23
 diff --git a/kernel/sysproc.c b/kernel/sysproc.c
-index 1de184e..935a6f2 100644
+index 1de184e..1b59574 100644
 --- a/kernel/sysproc.c
 +++ b/kernel/sysproc.c
 @@ -5,6 +5,7 @@
@@ -589,7 +589,7 @@ index 1de184e..935a6f2 100644
  
  uint64
  sys_exit(void)
-@@ -89,3 +90,32 @@ sys_uptime(void)
+@@ -89,3 +90,30 @@ sys_uptime(void)
    release(&tickslock);
    return xticks;
  }
@@ -620,17 +620,15 @@ index 1de184e..935a6f2 100644
 +  }
 +  return getpinfo(address);
 +}
-+
-+
 diff --git a/kernel/trap.c b/kernel/trap.c
-index 512c850..a0a7930 100644
+index 512c850..cb915b0 100644
 --- a/kernel/trap.c
 +++ b/kernel/trap.c
 @@ -166,7 +166,20 @@ clockintr()
    acquire(&tickslock);
    ticks++;
    wakeup(&ticks);
-+  
++
 +
 +  //Offline-3:Scheduling
 +  //Check for Boost interval
@@ -643,13 +641,13 @@ index 512c850..a0a7930 100644
 +
 +  //Update time consumed by a process
 +  updateTimeConsumption();
-+  
++
  }
  
  // check if it's an external interrupt or software interrupt,
 diff --git a/user/dummyproc.c b/user/dummyproc.c
 new file mode 100644
-index 0000000..fa47768
+index 0000000..317705e
 --- /dev/null
 +++ b/user/dummyproc.c
 @@ -0,0 +1,27 @@
@@ -660,7 +658,7 @@ index 0000000..fa47768
 +int
 +main(int argc,char *argv[]){
 +
-+    
++
 +    if( argc != 2){
 +        printf("Usage: %s sys_call_num command\n", argv[0]);
 +        exit(1);
@@ -683,7 +681,7 @@ index 0000000..fa47768
 \ No newline at end of file
 diff --git a/user/testprocinfo.c b/user/testprocinfo.c
 new file mode 100644
-index 0000000..cfd1325
+index 0000000..f247c60
 --- /dev/null
 +++ b/user/testprocinfo.c
 @@ -0,0 +1,23 @@
@@ -706,7 +704,7 @@ index 0000000..cfd1325
 +    for(int i=0;i<NPROC;i++){
 +        if(pst.pid[i]!=0)
 +        printf("%d\t%d\t%d\t%d\t\t%d\t\t\t%d\n",pst.pid[i],pst.inuse[i],pst.inQ[i],pst.tickets_original[i],pst.tickets_current[i],pst.time_slices[i]);
-+        
++
 +    }
 +    exit(0);
 +}
