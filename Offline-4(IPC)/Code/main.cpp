@@ -32,18 +32,17 @@ struct students
 };
 
 
-int studentCount = 20;
-int groupCount = 4;
+int studentCount;
+int groupCount;
 int w;
 int x;
 int y;
 int printerStatus[4];                               // 0 means available, 1 means busy
-pthread_t th[500];                                  
-struct students studentsArr[500];
-enum studentState studentStateArr[500];
+                                  
+vector<students> studentsArr;
 pthread_mutex_t mutex_printing;                     // To enter critical region while printing
 pthread_mutex_t mutex_leader;                       // For leader to join other group members' threads and binding
-sem_t sem_student[500];                             // Semaphore for each student
+vector<sem_t> sem_student;                          // Semaphore for each student
 time_t starttime = time(NULL);
 vector<int> printCount;
 
@@ -158,6 +157,10 @@ int main(){
     init_genrand(1905101);
     pthread_mutex_init(&mutex_printing,NULL);
     pthread_mutex_init(&mutex_leader, NULL);
+
+    sem_student.resize(studentCount + 1);
+    studentsArr.resize(studentCount + 1);
+
     for(int i=0; i<studentCount; i++){
         sem_init(&sem_student[i],0,0);
     }
@@ -183,13 +186,12 @@ int main(){
         studentsArr[i].arrival = genrand_int31(max((int)20/2,1));
         studentsArr[i].state = IDLE;
     }
-    for(int i=0; i<studentCount; i++){
-        studentStateArr[i] = IDLE;
-    }
+
 
     /*         Initialization ends                */
 
     //Initialize student threads
+    pthread_t th[studentCount];
     for(int i=0; i<studentCount; i++){
         int* id = (int*)malloc(sizeof(int));
         *id = i;
