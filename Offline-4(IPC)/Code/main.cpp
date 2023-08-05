@@ -1,3 +1,4 @@
+#include<bits/stdc++.h>
 #include<stdio.h>
 #include<stdlib.h>
 #include<pthread.h>
@@ -136,7 +137,7 @@ void write_entry_book(struct students *tmpStudent){
     sem_wait(&sem_submission);
     sleep(y);
     submission_count++;
-    printf("Group %d has submitted the report at time %ld\n",tmpStudent->ID,(time(NULL)-starttime));
+    printf("Group %d has submitted the report at time %ld\n",tmpStudent->group,(time(NULL)-starttime));
     sem_post(&sem_submission);
 }
 
@@ -207,11 +208,18 @@ void * staffTask(void * arg){
 
 
 int main(){
-    studentCount = 20;
-    groupCount = 4;
-    w = 10;
-    x = 8;
-    y = 3;
+    freopen("in.txt","r",stdin);
+    freopen("out.txt","w",stdout);
+
+    // studentCount = 20;
+    // groupCount = 4;
+    // w = 10;
+    // x = 8;
+    // y = 3;
+
+    cin >> studentCount >> groupCount;
+    cin >> w >> x >> y;
+
 
 
     /*         Initialization Begins         */
@@ -248,7 +256,7 @@ int main(){
         studentsArr[i].printing_station = ((i+1)%4)+1;
         if((i+1)%(studentCount/groupCount)== 0) studentsArr[i].teamLeader = 1;
         else studentsArr[i].teamLeader = 0;
-        studentsArr[i].arrival = genrand_int31(max((int)20/2,1));
+        studentsArr[i].arrival = genrand_int31(max((int)studentCount/2,1));
         studentsArr[i].state = IDLE;
     }
 
