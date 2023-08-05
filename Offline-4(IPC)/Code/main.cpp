@@ -45,6 +45,7 @@ pthread_mutex_t mutex_leader;                       // For leader to join other 
 vector<sem_t> sem_student;                          // Semaphore for each student
 time_t starttime = time(NULL);
 vector<int> printCount;
+sem_t sem_binding;                                  // Seamphore for binding...Initialized to 2
 
 
 
@@ -117,7 +118,12 @@ void wakeup_others(struct students *tmpStudent){
 
 
 void doBinding(struct students *tmpStudent){
-    printf("Binding , group no:%d team leader ID: %d  at time %ld\n",tmpStudent->group,tmpStudent->ID, (time(NULL)-starttime));
+
+    sem_wait(&sem_binding);
+    printf("Group %d has started binding at time %ld\n", tmpStudent->group, (time(NULL)-starttime));
+    sleep(x);
+    printf("Group %d has finished binding at time %ld\n", tmpStudent->group, (time(NULL)-starttime));
+    sem_post(&sem_binding);
 }
 
 void * studentTask(void * arg){
@@ -136,6 +142,8 @@ void * studentTask(void * arg){
         pthread_exit(NULL);
     }
 
+    // Print finish printing messages
+    printf("Group %d has finished printing at time %ld\n",tmpStudent->group, (time(NULL)-starttime)); 
     // Do binding 
     doBinding(tmpStudent);
 }
@@ -145,7 +153,7 @@ void * studentTask(void * arg){
 
 int main(){
     studentCount = 20;
-    groupCount = 4;
+    groupCount = 10;
     w = 10;
     x = 8;
     y = 3;
@@ -153,14 +161,15 @@ int main(){
 
     /*         Initialization Begins         */
 
+    //Resize
+    sem_student.resize(studentCount + 1);
+    studentsArr.resize(studentCount + 1);
+
     //Mutex and semaphore initialization
     init_genrand(1905101);
     pthread_mutex_init(&mutex_printing,NULL);
     pthread_mutex_init(&mutex_leader, NULL);
-
-    sem_student.resize(studentCount + 1);
-    studentsArr.resize(studentCount + 1);
-
+    sem_init(&sem_binding,0,2);
     for(int i=0; i<studentCount; i++){
         sem_init(&sem_student[i],0,0);
     }
