@@ -18,6 +18,8 @@ void test(struct students *tmpStudent);
 int wakeup_groupmates(struct students *tmpStudent);
 void wakeup_others(struct students *tmpStudent);
 void doBinding(struct students *tmpStudent);
+void write_entry_book(struct students *tmpStudent);
+void read_entry_book(int id);
 
 enum studentState {IDLE, WAITING, PRINTING};
 
@@ -41,11 +43,14 @@ int printerStatus[4];                               // 0 means available, 1 mean
                                   
 vector<students> studentsArr;
 pthread_mutex_t mutex_printing;                     // To enter critical region while printing
-pthread_mutex_t mutex_leader;                       // For leader to join other group members' threads and binding
 vector<sem_t> sem_student;                          // Semaphore for each student
 time_t starttime = time(NULL);
 vector<int> printCount;
 sem_t sem_binding;                                  // Seamphore for binding...Initialized to 2
+sem_t sem_submission;                               // To control reader,writer's access to submission count
+pthread_mutex_t mutex_submission;
+int reader_count = 0;
+int submission_count = 0;
 
 
 
@@ -126,6 +131,41 @@ void doBinding(struct students *tmpStudent){
     sem_post(&sem_binding);
 }
 
+void write_entry_book(struct students *tmpStudent){
+    sem_wait(&sem_submission);
+    sleep(y);
+    submission_count++;
+    printf("Group %d has submitted the report at time %ld\n",tmpStudent->ID,(time(NULL)-starttime));
+    sem_post(&sem_submission);
+}
+
+void read_entry_book(int id){
+    while(true){
+        pthread_mutex_lock(&mutex_submission);
+        reader_count++;
+        if(reader_count == 1) sem_wait(&sem_submission);        //The first reader
+        pthread_mutex_unlock(&mutex_submission);
+
+        // Read the data
+        sleep(y);
+        printf("Staff %d has started reading the entry book at time %ld. No. of submission = %d\n",id, (time(NULL)-starttime),submission_count);
+        if(submission_count == groupCount){
+            // All submission done
+            break;
+        }
+
+        pthread_mutex_lock(&mutex_submission);
+        reader_count--;
+        if(reader_count == 0) sem_post(&sem_submission);        // The last reader
+        pthread_mutex_unlock(&mutex_submission);
+
+        // Now sleep...come back later
+        int rand = genrand_int31(10);
+        //printf("-------------  Staff %d , rand: %d\n",id,rand);
+        sleep(rand);
+    }
+}
+
 void * studentTask(void * arg){
     struct students *tmpStudent = (students*)arg;
 
@@ -142,10 +182,24 @@ void * studentTask(void * arg){
         pthread_exit(NULL);
     }
 
+    // Only group leader can access the below section
+    // pthread_exit will ensure that
     // Print finish printing messages
     printf("Group %d has finished printing at time %ld\n",tmpStudent->group, (time(NULL)-starttime)); 
+
     // Do binding 
     doBinding(tmpStudent);
+
+    // Write entry-book
+    write_entry_book(tmpStudent);
+}
+
+
+void * staffTask(void * arg){
+    int* id = (int*)arg;
+    int rand = genrand_int31(5);
+    sleep(rand);
+    read_entry_book(*id);
 }
 
 
@@ -153,7 +207,7 @@ void * studentTask(void * arg){
 
 int main(){
     studentCount = 20;
-    groupCount = 10;
+    groupCount = 4;
     w = 10;
     x = 8;
     y = 3;
@@ -168,8 +222,9 @@ int main(){
     //Mutex and semaphore initialization
     init_genrand(1905101);
     pthread_mutex_init(&mutex_printing,NULL);
-    pthread_mutex_init(&mutex_leader, NULL);
+    pthread_mutex_init(&mutex_submission, NULL);
     sem_init(&sem_binding,0,2);
+    sem_init(&sem_submission,0,1);
     for(int i=0; i<studentCount; i++){
         sem_init(&sem_student[i],0,0);
     }
@@ -202,19 +257,33 @@ int main(){
     //Initialize student threads
     pthread_t th[studentCount];
     for(int i=0; i<studentCount; i++){
-        int* id = (int*)malloc(sizeof(int));
-        *id = i;
         pthread_create(&th[i], NULL, studentTask, (void*)&studentsArr[i]);
     }
+
+    //Initialize staff threads
+    pthread_t staff1, staff2;
+    int* id1 = (int*)malloc(sizeof(int));
+    *id1 = 1;
+    pthread_create(&staff1, NULL, staffTask, (void*)id1);
+    int* id2 = (int*)malloc(sizeof(int));
+    *id2 = 2;
+    pthread_create(&staff2, NULL, staffTask, (void*)id2);
+
+
+    // Join the threads
     for(int i=0; i<studentCount;i++){
         pthread_join(th[i],NULL);
     }
+    pthread_join(staff1, NULL);
+    pthread_join(staff2, NULL);
 
-
-    //Distroy semaphore
+    //Distroy semaphore and mutex
     for(int i=0; i<studentCount; i++){
         sem_destroy(&sem_student[i]);
     }
     pthread_mutex_destroy(&mutex_printing);
+    pthread_mutex_destroy(&mutex_submission);
+    sem_destroy(&sem_binding);
+    sem_destroy(&sem_submission);
     return 0;
 }
