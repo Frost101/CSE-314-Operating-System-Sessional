@@ -57,6 +57,7 @@ int submission_count = 0;
 void access_printing_machine(struct students *tmpStudent){
     pthread_mutex_lock(&mutex_printing);
     tmpStudent->state = WAITING;
+    printf("Student %d has arrived at the printing station at time %ld\n",tmpStudent->ID, (time(NULL)-starttime));
     test(tmpStudent);
     pthread_mutex_unlock(&mutex_printing);
     sem_wait(&sem_student[tmpStudent->ID - 1]);
@@ -113,7 +114,7 @@ void wakeup_others(struct students *tmpStudent){
         if(studentsArr[i].printing_station == tmpStudent->printing_station && studentsArr[i].state == WAITING){
             studentsArr[i].state = PRINTING;
             //printf("-----Student %d has woke up other person %d ------\n",tmpStudent->ID,studentsArr[i].ID);
-            printf("Student %d has arrived at the printing station at time %ld\n",studentsArr[i].ID, (time(NULL)-starttime));
+            //printf("Student %d has arrived at the printing station at time %ld\n",studentsArr[i].ID, (time(NULL)-starttime));
             sem_post(&sem_student[studentsArr[i].ID - 1]);
             flag = 1;
             if(flag == 1)break;
