@@ -40,7 +40,10 @@ std::mt19937 generator(rd());
 // Define the Poisson distribution parameters (lambda)
 double lambda = 5.0; // Adjust this value according to your desired mean
 // Create the Poisson distribution object
-std::poisson_distribution<int> poissonDist(lambda);
+std::poisson_distribution<int> poissonDist(lambda);         // For students
+
+double lambda2 = 3.0; // Adjust this value according to your desired mean
+std::poisson_distribution<int> poissonDist2(lambda2);       //For staffs
 
 int studentCount;
 int groupCount;
@@ -53,7 +56,6 @@ int printerStatus[4];                               // 0 means available, 1 mean
 vector<students> studentsArr;
 pthread_mutex_t mutex_printing;                     // To enter critical region while printing
 pthread_mutex_t mutex_submission;
-pthread_mutex_t mutex_finish_printing;              // To ptint the msg,finish printing
 vector<sem_t> sem_student;                          // Semaphore for each student
 time_t starttime = time(NULL);
 vector<int> printCount;
@@ -95,7 +97,6 @@ void test(struct students *tmpStudent){
     if(printerStatus[tmpStudent->printing_station - 1] == 0){
         tmpStudent->state = PRINTING;
         printerStatus[tmpStudent->printing_station - 1] = 1;    //That printer is busy now
-        printf("Student %d has arrived at the printing station at time %ld\n",tmpStudent->ID, (time(NULL)-starttime));
         sem_post(&sem_student[tmpStudent->ID - 1]);
     }
 }
@@ -108,7 +109,6 @@ int wakeup_groupmates(struct students *tmpStudent){
         if(studentsArr[i].group == tmpStudent->group && studentsArr[i].printing_station == tmpStudent->printing_station && studentsArr[i].state == WAITING){
             studentsArr[i].state = PRINTING;
             //printf("****Student %d has woke up his groupmate %d ****\n",tmpStudent->ID,studentsArr[i].ID);
-            printf("Student %d has arrived at the printing station at time %ld\n",studentsArr[i].ID,(time(NULL)-starttime));
             sem_post(&sem_student[studentsArr[i].ID - 1]);
             flag = 1;
             if(flag == 1)break;
@@ -127,7 +127,6 @@ void wakeup_others(struct students *tmpStudent){
         if(studentsArr[i].printing_station == tmpStudent->printing_station && studentsArr[i].state == WAITING){
             studentsArr[i].state = PRINTING;
             //printf("-----Student %d has woke up other person %d ------\n",tmpStudent->ID,studentsArr[i].ID);
-            //printf("Student %d has arrived at the printing station at time %ld\n",studentsArr[i].ID, (time(NULL)-starttime));
             sem_post(&sem_student[studentsArr[i].ID - 1]);
             flag = 1;
             if(flag == 1)break;
@@ -174,7 +173,7 @@ void read_entry_book(int id){
         pthread_mutex_unlock(&mutex_submission);
 
         // Now sleep...come back later
-        int rand = poissonDist(generator) + 1;
+        int rand = poissonDist2(generator) + 1;
         //printf("-------------  Staff %d , rand: %d\n",id,rand);
         sleep(rand);
     }
@@ -199,9 +198,9 @@ void * studentTask(void * arg){
     // Only group leader can access the below section
     // pthread_exit will ensure that
     // Print finish printing messages
-    pthread_mutex_lock(&mutex_finish_printing);
+    
     printf("Group %d has finished printing at time %ld\n",tmpStudent->group, (time(NULL)-starttime)); 
-    pthread_mutex_unlock(&mutex_finish_printing);
+
 
     // Do binding 
     doBinding(tmpStudent);
@@ -213,7 +212,7 @@ void * studentTask(void * arg){
 
 void * staffTask(void * arg){
     int* id = (int*)arg;
-    int rand = poissonDist(generator) + 1;
+    int rand = poissonDist2(generator) + 1;
     sleep(rand);
     read_entry_book(*id);
 }
@@ -241,7 +240,6 @@ int main(){
     //Mutex and semaphore initialization
     pthread_mutex_init(&mutex_printing,NULL);
     pthread_mutex_init(&mutex_submission, NULL);
-    pthread_mutex_init(&mutex_finish_printing, NULL);
     sem_init(&sem_binding,0,2);
     sem_init(&sem_submission,0,1);
     for(int i=0; i<studentCount; i++){
@@ -302,7 +300,6 @@ int main(){
     }
     pthread_mutex_destroy(&mutex_printing);
     pthread_mutex_destroy(&mutex_submission);
-    pthread_mutex_destroy(&mutex_finish_printing);
     sem_destroy(&sem_binding);
     sem_destroy(&sem_submission);
     return 0;
