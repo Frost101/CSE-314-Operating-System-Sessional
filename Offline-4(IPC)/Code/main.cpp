@@ -52,12 +52,13 @@ int printerStatus[4];                               // 0 means available, 1 mean
                                   
 vector<students> studentsArr;
 pthread_mutex_t mutex_printing;                     // To enter critical region while printing
+pthread_mutex_t mutex_submission;
+pthread_mutex_t mutex_finish_printing;              // To ptint the msg,finish printing
 vector<sem_t> sem_student;                          // Semaphore for each student
 time_t starttime = time(NULL);
 vector<int> printCount;
 sem_t sem_binding;                                  // Seamphore for binding...Initialized to 2
 sem_t sem_submission;                               // To control reader,writer's access to submission count
-pthread_mutex_t mutex_submission;
 int reader_count = 0;
 int submission_count = 0;
 
@@ -198,7 +199,9 @@ void * studentTask(void * arg){
     // Only group leader can access the below section
     // pthread_exit will ensure that
     // Print finish printing messages
+    pthread_mutex_lock(&mutex_finish_printing);
     printf("Group %d has finished printing at time %ld\n",tmpStudent->group, (time(NULL)-starttime)); 
+    pthread_mutex_unlock(&mutex_finish_printing);
 
     // Do binding 
     doBinding(tmpStudent);
@@ -238,6 +241,7 @@ int main(){
     //Mutex and semaphore initialization
     pthread_mutex_init(&mutex_printing,NULL);
     pthread_mutex_init(&mutex_submission, NULL);
+    pthread_mutex_init(&mutex_finish_printing, NULL);
     sem_init(&sem_binding,0,2);
     sem_init(&sem_submission,0,1);
     for(int i=0; i<studentCount; i++){
@@ -298,6 +302,7 @@ int main(){
     }
     pthread_mutex_destroy(&mutex_printing);
     pthread_mutex_destroy(&mutex_submission);
+    pthread_mutex_destroy(&mutex_finish_printing);
     sem_destroy(&sem_binding);
     sem_destroy(&sem_submission);
     return 0;
