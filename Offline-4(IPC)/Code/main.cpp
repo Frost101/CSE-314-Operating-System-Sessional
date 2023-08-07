@@ -4,7 +4,6 @@
 #include<pthread.h>
 #include<unistd.h>
 #include<math.h>
-#include"rand.c"
 #include<algorithm>
 #include<semaphore.h>
 #include<time.h>
@@ -35,8 +34,17 @@ struct students
 };
 
 
+// Seed the random number generator
+std::random_device rd;
+std::mt19937 generator(rd());
+// Define the Poisson distribution parameters (lambda)
+double lambda = 5.0; // Adjust this value according to your desired mean
+// Create the Poisson distribution object
+std::poisson_distribution<int> poissonDist(lambda);
+
 int studentCount;
 int groupCount;
+int memberCount;
 int w;
 int x;
 int y;
@@ -93,8 +101,9 @@ void test(struct students *tmpStudent){
 
 int wakeup_groupmates(struct students *tmpStudent){
     int flag = 0;
-    for(int i=0; i<studentCount; i++){
-        //If that student is in the same group,assigned to same printing machine & waiting on that machine
+    int tmpCount = memberCount;
+    int i = ((tmpStudent->group) * memberCount) - 1;
+    while(tmpCount > 0 && i >= 0){
         if(studentsArr[i].group == tmpStudent->group && studentsArr[i].printing_station == tmpStudent->printing_station && studentsArr[i].state == WAITING){
             studentsArr[i].state = PRINTING;
             //printf("****Student %d has woke up his groupmate %d ****\n",tmpStudent->ID,studentsArr[i].ID);
@@ -103,6 +112,8 @@ int wakeup_groupmates(struct students *tmpStudent){
             flag = 1;
             if(flag == 1)break;
         }
+        i--;
+        tmpCount--;
     }
     return flag;
 }
@@ -162,7 +173,7 @@ void read_entry_book(int id){
         pthread_mutex_unlock(&mutex_submission);
 
         // Now sleep...come back later
-        int rand = genrand_int31(10);
+        int rand = poissonDist(generator) + 1;
         //printf("-------------  Staff %d , rand: %d\n",id,rand);
         sleep(rand);
     }
@@ -199,7 +210,7 @@ void * studentTask(void * arg){
 
 void * staffTask(void * arg){
     int* id = (int*)arg;
-    int rand = genrand_int31(5);
+    int rand = poissonDist(generator) + 1;
     sleep(rand);
     read_entry_book(*id);
 }
@@ -211,25 +222,20 @@ int main(){
     freopen("in.txt","r",stdin);
     freopen("out.txt","w",stdout);
 
-    // studentCount = 20;
-    // groupCount = 4;
-    // w = 10;
-    // x = 8;
-    // y = 3;
-
-    cin >> studentCount >> groupCount;
+    cin >> studentCount >> memberCount;
     cin >> w >> x >> y;
+    groupCount = studentCount/memberCount;
+
 
 
 
     /*         Initialization Begins         */
 
-    //Resize
+    // Resize
     sem_student.resize(studentCount + 1);
     studentsArr.resize(studentCount + 1);
 
     //Mutex and semaphore initialization
-    init_genrand(1905101);
     pthread_mutex_init(&mutex_printing,NULL);
     pthread_mutex_init(&mutex_submission, NULL);
     sem_init(&sem_binding,0,2);
@@ -256,7 +262,7 @@ int main(){
         studentsArr[i].printing_station = ((i+1)%4)+1;
         if((i+1)%(studentCount/groupCount)== 0) studentsArr[i].teamLeader = 1;
         else studentsArr[i].teamLeader = 0;
-        studentsArr[i].arrival = genrand_int31(max((int)studentCount/2,1));
+        studentsArr[i].arrival = poissonDist(generator) + 1;
         studentsArr[i].state = IDLE;
     }
 
